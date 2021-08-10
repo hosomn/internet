@@ -5,7 +5,8 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <socket.h>
+#include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
@@ -21,22 +22,33 @@ void* func(void* arg)
 
     int ret;
     int fd = *((int*)arg);
-    char buff[BUFF_SIZE]={0};
-    ret = recv(fd,buff,sizeof(buff),0);
-
-    for (int i=0;i <ret;i++)
+    while(1)
     {
-        printf("%2.X ",buff[i]);
+        char buff[BUFF_SIZE]={0};
+        ret = recv(fd,buff,sizeof(buff),0);
+        
+        if ( ret <= 0 )
+        {
+            printf("client close\n");
+            break;
+        }
+        for (int i=0;i <ret;i++)
+        {
+            printf("%2.X ",buff[i]);
+        }
+        printf("\n");
     }
-    printf("\n");
+
+    free(arg);
+    
 }
 
 int tcp_service_init(unsigned short port_num,const char *ip_addr)
 {
     int sock_fd;
-    struct sockadd_in server_addr;
+    struct sockaddr_in server_addr;
 
-    if ( (sock_fd = socker(AF_INET,SOCK_STREAM,0)) == -1 )
+    if ( (sock_fd = socket(AF_INET,SOCK_STREAM,0)) == -1 )
     {
         fprintf(stderr,"Socker error:%s\n\a",strerror(errno));
         exit(1);
@@ -49,7 +61,7 @@ int tcp_service_init(unsigned short port_num,const char *ip_addr)
 
     if ( bind(sock_fd,(struct sockaddr*)(&server_addr),sizeof(struct sockaddr)) == -1 )
     {
-        fprintf(strerr,"Bind error:%s\n\a",strerror(errno));
+        fprintf(stderr,"Bind error:%s\n\a",strerror(errno));
         exit(1);
     }
 
@@ -70,17 +82,17 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
     {
         if ( select(cli_num+1,&rfds,NULL,NULL,NULL) <= 0)
         {
-            sprintf(strerr,"Select errno:%s\n\a",strerror(errno));
+            fprintf(stderr,"Select errno:%s\n\a",strerror(errno));
             continue;
         }
 
         //服务端就绪
-        if ( FD_ISSET(sock_fd,&rfds) )
+        if ( FD_ISSET(serv_fd,&rfds) )
         {
-            cli_fd[cli_num] = accept(sock_fd,NULL,NULL);
+            cli_fd[cli_num] = accept(serv_fd,NULL,NULL);
             if ( cli_fd[cli_num] == -1 )
             {
-                sprintf (strerr,"Accept socket error:%s\n\a",strerror(errno));
+                fprintf (stderr,"Accept socket error:%s\n\a",strerror(errno));
                 continue;
             }
             cli_num++;
@@ -95,10 +107,12 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
         //客户端就绪
         for (int i=0;i<cli_num;i++)
         {
-            if ( FD_ISSET(cli_fd[i]) )
+            if ( FD_ISSET(cli_fd[i],&rfds) )
             {
                 pthread_t ptr_t;
-                int ret = pthread_create(&ptr_t,NULL,fun,(void*)cli_fd[i]);
+                int* client_fd = (int*)malloc(sizeof(int));
+                *client_fd = cli_fd[i];
+                int ret = pthread_create(&ptr_t,NULL,func,(void*)client_fd);
                 if ( ret != 0 )
                 {
                     printf("create pthread failed\n");
@@ -113,14 +127,11 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
         }
 
     }
-        
-
-
-
 }
 
-int main(void)
+int main(int argc,char* argv[])
 {
-    
+    int port = (unsigned short)atoi(argv[1]);
+    select_service_init(port,argv[2]);
     return 0;
 }
