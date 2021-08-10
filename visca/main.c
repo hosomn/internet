@@ -6,6 +6,8 @@
 
 
 
+
+
 int main(int argc,char* argv[])
 {
 	Mes_serv *mes;
