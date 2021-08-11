@@ -14,12 +14,12 @@
 #define MAX_CLI_NUM 1024
 #define BUFF_SIZE   1024
 
+int cli_fd[MAX_CLI_NUM] = {0};
+int cli_num = 0;
+int serv_fd;
+fd_set rfds;
 
-
-typedef struct ClientInformation
-{
-    
-}Client;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 void* func(void* arg)
@@ -27,7 +27,11 @@ void* func(void* arg)
     pthread_detach(pthread_self());
 
     int ret;
-    int fd = *((int*)arg);
+    int index = *((int*)arg);
+
+    pthread_mutex_lock(&mutex);
+    int fd = cli_fd[index];
+    pthread_mutex_unlock(&mutex);
 
     while(1)
     {
@@ -37,7 +41,14 @@ void* func(void* arg)
         if ( ret <= 0 )
         {
             printf("client close\n");
+            
+            pthread_mutex_lock(&mutex);
             close(fd);
+            cli_num--;
+            FD_CLR(fd,&rfds);
+            cli_fd[index] = 0;
+            pthread_mutex_unlock(&mutex);
+
             break;
         }
         for (int i=0;i <ret;i++)
@@ -45,7 +56,7 @@ void* func(void* arg)
             printf("%.2X ",buff[i]);
         }
         printf("\n");
-        sleep(1);
+
     }
 
     free(arg);
@@ -87,7 +98,7 @@ int tcp_service_init(unsigned short port_num,const char *ip_addr)
 
 int select_service_init(unsigned short port_num,const char *ip_addr)
 {
-    int serv_fd = tcp_service_init(port_num,ip_addr);
+    serv_fd = tcp_service_init(port_num,ip_addr);
     if ( serv_fd < 0 )
     {
         printf("Tcp service init failed!\n");
@@ -95,18 +106,15 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
     }
 
     int retval;
-    int cli_fd[MAX_CLI_NUM] = {0};
-    int cli_num = 0;
     int max_fd = serv_fd;
     int new_fd;
 
-    fd_set rfds;
-
     printf("port number is:%d,ip address is:%s\n",port_num,ip_addr);  
 
-    int count_pthread = 0;
     while(1)
     {
+        pthread_mutex_lock(&mutex);
+
         FD_ZERO(&rfds);
         FD_SET(serv_fd,&rfds);
 
@@ -141,7 +149,6 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
             }
 
 
-
             if ( cli_num < MAX_CLI_NUM )
             {
                 for( int i = 0;i < MAX_CLI_NUM;i++)
@@ -167,21 +174,15 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
 
         }
 
-        sleep(1);
-
         //客户端就绪
         for (int i=0;i<cli_num;i++)
         {
-            printf("file descripe is:%d\n",cli_fd[i]);
-            
+    
             if ( FD_ISSET(cli_fd[i],&rfds) )
             {
                 pthread_t ptr_t;
                 int* client_fd = (int*)malloc(sizeof(int));
-                *client_fd = cli_fd[i];
-
-                sleep(1);        
-                printf("=======read beginning=========%d\n",count_pthread++);
+                *client_fd = i;
                 
                 int ret = pthread_create(&ptr_t,NULL,func,(void*)client_fd);
                 if ( ret != 0 )
@@ -195,8 +196,9 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
             {
                 continue;
             }
-
         }
+
+        pthread_mutex_unlock(&mutex);
 
     }
 }
@@ -205,6 +207,9 @@ int main(int argc,char* argv[])
 {
     int port = (unsigned short)atoi(argv[1]);
     select_service_init(port,argv[2]);
+
+    pthread_mutex_destroy(&mutex);
+
     return 0;
 }
 
@@ -213,5 +218,5 @@ int main(int argc,char* argv[])
 /*
     客户端的文件描述符；
     实际在线的客户数；
-    
+
 */
