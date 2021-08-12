@@ -33,32 +33,30 @@ void* func(void* arg)
     int fd = cli_fd[index];
     pthread_mutex_unlock(&mutex);
 
-    while(1)
+    unsigned char buff[BUFF_SIZE]={0};
+    ret = recv(fd,buff,sizeof(buff),0);
+    
+    if ( ret <= 0 )
+    {        
+        pthread_mutex_lock(&mutex);
+        printf("client close\n");
+        close(fd);
+        cli_num--;
+        FD_CLR(fd,&rfds);
+        cli_fd[index] = 0;
+        pthread_mutex_unlock(&mutex);
+    }
+    else
     {
-        unsigned char buff[BUFF_SIZE]={0};
-        ret = recv(fd,buff,sizeof(buff),0);
-        
-        if ( ret <= 0 )
-        {
-            printf("client close\n");
-            
-            pthread_mutex_lock(&mutex);
-            close(fd);
-            cli_num--;
-            FD_CLR(fd,&rfds);
-            cli_fd[index] = 0;
-            pthread_mutex_unlock(&mutex);
-
-            break;
-        }
+        pthread_mutex_lock(&mutex);
         for (int i=0;i <ret;i++)
         {
             printf("%.2X ",buff[i]);
         }
         printf("\n");
-
+        pthread_mutex_unlock(&mutex);
     }
-
+    
     free(arg);
     
 }
@@ -177,7 +175,6 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
         //客户端就绪
         for (int i=0;i<cli_num;i++)
         {
-    
             if ( FD_ISSET(cli_fd[i],&rfds) )
             {
                 pthread_t ptr_t;
@@ -199,6 +196,7 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
         }
 
         pthread_mutex_unlock(&mutex);
+        sleep(1);
 
     }
 }
@@ -213,10 +211,3 @@ int main(int argc,char* argv[])
     return 0;
 }
 
-
-
-/*
-    客户端的文件描述符；
-    实际在线的客户数；
-
-*/
