@@ -16,48 +16,78 @@
 
 int cli_fd[MAX_CLI_NUM] = {0};
 int cli_num = 0;
+int lost_cli_num = 0;
 int serv_fd;
 fd_set rfds;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
+void printf_command_name(char* buff)
+{
+    //打印出对应命令的名称
+    if ( (int)buff[1] == 0x09 )
+    {   
+        printf("Pan-tiltPoslnq:查询位置坐标: ");
+    }   
+    else if ( (int)buff[1] == 0x01 )
+    {   
+
+        switch ((int)buff[3])
+        {
+            case 0x02:
+                printf("HOME位置: ");
+                break;
+
+            case 0x01:
+                printf("速度等级%d: ",(int)buff[4]);
+                break;
+
+            default:
+                printf("invalid command\n");
+                break;
+        }
+    }   
+    else
+    {   
+        printf("invalid command\n");
+    }   
+    
+}
+
+
 void* func(void* arg)
 {
     pthread_detach(pthread_self());
 
-    int ret;
-    int index = *((int*)arg);
-
     pthread_mutex_lock(&mutex);
+    int ret;
+    int index = (int)arg;
     int fd = cli_fd[index];
-    pthread_mutex_unlock(&mutex);
+    
 
     unsigned char buff[BUFF_SIZE]={0};
     ret = recv(fd,buff,sizeof(buff),0);
     
     if ( ret <= 0 )
     {        
-        pthread_mutex_lock(&mutex);
         printf("client close\n");
         close(fd);
-        cli_num--;
+        lost_cli_num++;
         FD_CLR(fd,&rfds);
         cli_fd[index] = 0;
-        pthread_mutex_unlock(&mutex);
     }
     else
     {
-        pthread_mutex_lock(&mutex);
+        printf_command_name(buff);
         for (int i=0;i <ret;i++)
         {
             printf("%.2X ",buff[i]);
         }
         printf("\n");
-        pthread_mutex_unlock(&mutex);
     }
-    
-    free(arg);
+    pthread_mutex_unlock(&mutex);
+    //free(arg);
     
 }
 
@@ -106,7 +136,9 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
     int retval;
     int max_fd = serv_fd;
     int new_fd;
+    struct timeval tv;
 
+    int thread_count = 0;
     printf("port number is:%d,ip address is:%s\n",port_num,ip_addr);  
 
     while(1)
@@ -123,11 +155,20 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
                 FD_SET(cli_fd[i],&rfds);
             }
         }
+        
+        tv.tv_sec = 10;
+        tv.tv_usec = 0;
 
-        retval = select(max_fd+1,&rfds,NULL,NULL,NULL);
-        if (  retval <= 0 )
+        retval = select(max_fd+1,&rfds,NULL,NULL,&tv);
+        if (  retval < 0 )
         {
             fprintf(stderr,"Select errno:%s\n\a",strerror(errno));
+            break;
+        }
+        else if ( retval == 0 )
+        {
+            printf("Time out\n");
+            pthread_mutex_unlock(&mutex);
             continue;
         }
 
@@ -178,10 +219,11 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
             if ( FD_ISSET(cli_fd[i],&rfds) )
             {
                 pthread_t ptr_t;
-                int* client_fd = (int*)malloc(sizeof(int));
-                *client_fd = i;
+                //int* client_fd = (int*)malloc(sizeof(int));
+                //*client_fd = i;
                 
-                int ret = pthread_create(&ptr_t,NULL,func,(void*)client_fd);
+                printf("the new thread %d\n",thread_count++);
+                int ret = pthread_create(&ptr_t,NULL,func,(void*)i);
                 if ( ret != 0 )
                 {
                     printf("create pthread failed\n");
@@ -194,9 +236,11 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
                 continue;
             }
         }
+        cli_num -= lost_cli_num;
+        lost_cli_num = 0;
 
         pthread_mutex_unlock(&mutex);
-        sleep(1);
+        usleep(500);
 
     }
 }
