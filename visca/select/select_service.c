@@ -16,7 +16,7 @@
 
 int cli_fd[MAX_CLI_NUM] = {0};
 int cli_num = 0;
-int lost_cli_num = 0;
+//int lost_cli_num = 0;   
 int serv_fd;
 fd_set rfds;
 
@@ -73,7 +73,7 @@ void* func(void* arg)
     {        
         printf("client close\n");
         close(fd);
-        lost_cli_num++;
+        //lost_cli_num++;
         FD_CLR(fd,&rfds);
         cli_fd[index] = 0;
     }
@@ -236,8 +236,6 @@ int select_service_init(unsigned short port_num,const char *ip_addr)
                 continue;
             }
         }
-        cli_num -= lost_cli_num;
-        lost_cli_num = 0;
 
         pthread_mutex_unlock(&mutex);
         usleep(500);
